@@ -30,6 +30,7 @@ from torchtitan.tools.profiling import (
     maybe_enable_memory_snapshot,
     maybe_enable_profiling,
 )
+from torch.cuda.amp import autocast, GradScaler
 
 
 class Trainer(torch.distributed.checkpoint.stateful.Stateful):
@@ -357,8 +358,9 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             # Non-PP forward / backward
             with self.train_context(optional_context_parallel_ctx):
                 assert len(model_parts) == 1
-                pred = model_parts[0](inputs)
-                loss = self.loss_fn(pred, labels)
+                with autocast(dtype=torch.bfloat16):
+                    pred = model_parts[0](inputs)
+                    loss = self.loss_fn(pred, labels)
                 # need to free to before bwd to avoid peaking memory
                 del pred
                 loss.backward()
