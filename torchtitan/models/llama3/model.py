@@ -21,6 +21,7 @@ from torchtitan.protocols.train_spec import BaseModelArgs, ModelProtocol
 
 import aiter
 from torchtitan.models.llama3.rope import TEFusedRoPEFunc
+from torchtitan.models.llama3.rmsnorm import TERMSNorm
 
 @dataclass
 class TransformerModelArgs(BaseModelArgs):
@@ -352,6 +353,8 @@ class TransformerBlock(nn.Module):
         )
         self.attention_norm = nn.RMSNorm(model_args.dim, eps=model_args.norm_eps)
         self.ffn_norm = nn.RMSNorm(model_args.dim, eps=model_args.norm_eps)
+        #self.attention_norm = TERMSNorm(model_args.dim, eps=model_args.norm_eps)
+        #self.ffn_norm = TERMSNorm(model_args.dim, eps=model_args.norm_eps)
 
         if model_args.depth_init:
             self.weight_init_std = 0.02 / (2 * (layer_id + 1)) ** 0.5
