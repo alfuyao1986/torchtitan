@@ -354,13 +354,21 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
                 if self.pp_has_last_stage
                 else torch.tensor([-1.0], device=self.device)
             )
-        else:
+        elif parallel_dims.dp_replicate_enabled:
             # Non-PP forward / backward
             with self.train_context(optional_context_parallel_ctx):
                 assert len(model_parts) == 1
                 with autocast(dtype=torch.bfloat16):
                     pred = model_parts[0](inputs)
                     loss = self.loss_fn(pred, labels)
+                # need to free to before bwd to avoid peaking memory
+                del pred
+                loss.backward()
+        else:
+            with self.train_context(optional_context_parallel_ctx):
+                assert len(model_parts) == 1
+                pred = model_parts[0](inputs)
+                loss = self.loss_fn(pred, labels)
                 # need to free to before bwd to avoid peaking memory
                 del pred
                 loss.backward()
