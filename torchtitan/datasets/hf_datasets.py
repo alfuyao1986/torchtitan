@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Iterator, Tuple, Dict
 
 import torch
 
