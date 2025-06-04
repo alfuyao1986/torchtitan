@@ -188,7 +188,9 @@ class Training:
     Path to the dataset in the file system. If provided, data will be
     loaded from this path instead of downloaded.
     """
-
+    synthetic_data: bool = False
+    """Use synthetic data"""
+    
     batch_size: int = 8
     """Batch size"""
 
