@@ -219,6 +219,7 @@ def build_hf_dataloader(
 
         synthetic_ds = SyntheticIterableDataset(
             seq_len=seq_len,
+            batch_size=batch_size,
             vocab_size=vocab_sz,
             device=device,
             dtype=torch.long,
