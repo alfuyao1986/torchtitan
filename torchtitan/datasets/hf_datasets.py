@@ -12,13 +12,71 @@ import torch
 from datasets import Dataset, load_dataset
 from datasets.distributed import split_dataset_by_node
 from torch.distributed.checkpoint.stateful import Stateful
-from torch.utils.data import IterableDataset
+from torch.utils.data import IterableDataset, DataLoader
 
 from torchtitan.components.dataloader import ParallelAwareDataloader
 from torchtitan.components.tokenizer import Tokenizer
 from torchtitan.config_manager import JobConfig
 from torchtitan.tools.logging import logger
 
+class SyntheticIterableDataset(IterableDataset):
+    def __init__(
+        self,
+        batch_size: int,
+        seq_len: int,
+        vocab_size: int,
+        device: torch.device,
+        dtype: torch.dtype = torch.long,
+    ):
+        self.batch_size = batch_size
+        self.seq_len = seq_len
+        self.vocab_size = vocab_size
+        self.device = device
+        self.dtype = dtype
+
+    def __iter__(self) -> Iterator[Tuple[Dict[str, torch.Tensor], torch.Tensor]]:
+        while True:
+            inputs = torch.randint(
+                low=0,
+                high=self.vocab_size,
+                size=(self.batch_size, self.seq_len),
+                device=self.device,
+                dtype=self.dtype,
+            )
+            labels = torch.randint(
+                low=0,
+                high=self.vocab_size,
+                size=(self.batch_size, self.seq_len),
+                device=self.device,
+                dtype=self.dtype,
+            )
+            yield {"input": inputs}, labels
+
+def build_synthetic_dataloader(
+    batch_size: int,
+    seq_len: int,
+    vocab_size: int,
+    device: torch.device,
+    num_workers: int = 0,
+) -> DataLoader:
+    """
+    Wraps SyntheticIterableDataset in a DataLoader so that each iteration returns
+    exactly one batch of size (batch_size, seq_len) on `device`.
+    """
+    dataset = SyntheticIterableDataset(
+        batch_size=batch_size,
+        seq_len=seq_len,
+        vocab_size=vocab_size,
+        device=device,
+        dtype=torch.long,
+    )
+    return DataLoader(
+        dataset,
+        batch_size=None,      # dataset already yields full batches
+        shuffle=False,
+        num_workers=num_workers,
+        prefetch_factor=2,
+    )
 
 def _load_c4_dataset(dataset_path: str):
     """Load C4 dataset with default configuration."""
@@ -176,7 +234,36 @@ def build_hf_dataloader(
     dataset_path = job_config.training.dataset_path
     batch_size = job_config.training.batch_size
     seq_len = job_config.training.seq_len
+    device = torch.device(f"cuda:{dp_rank}") if torch.cuda.is_available() else torch.device("cpu")
+    # If synthetic_data is True, return a synthetic dataloader:
+    if getattr(job_config.training, "synthetic_data", False):
+        # Use tokenizer.vocab_size if available; otherwise fallback
+        if tokenizer is not None and hasattr(tokenizer, "vocab_size"):
+            vocab_sz = tokenizer.vocab_size
+        else:
+            vocab_sz = getattr(job_config.model, "vocab_size", 30000)
 
+        synthetic_loader = build_synthetic_dataloader(
+            batch_size=batch_size,
+            seq_len=seq_len,
+            vocab_size=vocab_sz,
+            device=device,
+            num_workers=getattr(job_config.training, "num_workers", 0),
+        )
+        logger.warning(
+            f"Using SYNTHETIC data: batch_size={batch_size}, seq_len={seq_len}, vocab_size={vocab_sz}"
+        )
+        return ParallelAwareDataloader(
+            dataset=synthetic_loader.dataset,  # the IterableDataset inside DataLoader
+            dp_rank=dp_rank,
+            dp_world_size=dp_world_size,
+            batch_size=batch_size,
+            dataloader=synthetic_loader,
+        )
+
+    # Otherwise, build the normal HuggingFaceDataset pipeline:
+    dataset_name = job_config.training.dataset
+    dataset_path = job_config.training.dataset_path
     hf_ds = HuggingFaceDataset(
         dataset_name=dataset_name,
         dataset_path=dataset_path,
@@ -186,7 +273,6 @@ def build_hf_dataloader(
         dp_world_size=dp_world_size,
         infinite=infinite,
     )
-
     return ParallelAwareDataloader(
         dataset=hf_ds,
         dp_rank=dp_rank,
