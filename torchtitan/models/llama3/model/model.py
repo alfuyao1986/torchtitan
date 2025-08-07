@@ -196,10 +196,6 @@ class Attention(nn.Module):
         keys = repeat_kv(xk, self.n_rep)  # (bs, seqlen, n_local_heads, head_dim)
         values = repeat_kv(xv, self.n_rep)  # (bs, seqlen, n_local_heads, head_dim)
 
-        xq = xq.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-        xk = keys.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-        xv = values.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-
         #output = self.sdpa(xq, xk, xv)
         output, _ = aiter.flash_attn_func(xq, keys, values, causal=True, return_lse=True, deterministic=False)
 
