@@ -16,6 +16,7 @@ from torchtitan.protocols.train_spec import ModelProtocol
 
 from .args import TransformerModelArgs
 
+import aiter
 
 def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0) -> torch.Tensor:
     """
@@ -140,11 +141,12 @@ class Attention(nn.Module):
         self.wq = nn.Linear(
             model_args.dim, model_args.n_heads * self.head_dim, bias=False
         )
-        self.wk = nn.Linear(model_args.dim, self.n_kv_heads * self.head_dim, bias=False)
-        self.wv = nn.Linear(model_args.dim, self.n_kv_heads * self.head_dim, bias=False)
+        self.wkv = nn.Linear(model_args.dim, 2 * self.n_kv_heads * self.head_dim, bias=False)
+
         self.wo = nn.Linear(
             model_args.n_heads * self.head_dim, model_args.dim, bias=False
         )
+        self.kv_size = self.n_kv_heads * self.head_dim
         self.sdpa = build_attention(model_args.use_flex_attn, model_args.attn_mask_type)
 
     def init_weights(self, init_std: float):
@@ -176,6 +178,15 @@ class Attention(nn.Module):
         # local heads from sizes of xq, xk, and xv as TP may have sharded them
         # after the above linear ops.
         xq = xq.view(bs, seqlen, -1, self.head_dim)
+        xkv = self.wkv(x)
+        xk, xv = xkv.split([self.kv_size, self.kv_size], dim=-1)
+        xk = xk.contiguous()
+        xv = xv.contiguous()
+
+        # Use -1 instead of `n_heads` (or `n_kv_heads`) to infer the actual
+        # local heads from sizes of xq, xk, and xv as TP may have sharded them
+        # after the above linear ops.
+        xq = xq.view(bs, seqlen, -1, self.head_dim)
         xk = xk.view(bs, seqlen, -1, self.head_dim)
         xv = xv.view(bs, seqlen, -1, self.head_dim)
 
@@ -189,11 +200,9 @@ class Attention(nn.Module):
         xk = keys.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
         xv = values.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
 
-        output = self.sdpa(xq, xk, xv)
+        #output = self.sdpa(xq, xk, xv)
+        output, _ = aiter.flash_attn_func(xq, keys, values, causal=True, return_lse=True, deterministic=False)
 
-        output = output.transpose(
-            1, 2
-        ).contiguous()  # (bs, seqlen, n_local_heads, head_dim)
         output = output.view(bs, seqlen, -1)
         return self.wo(output)
 
