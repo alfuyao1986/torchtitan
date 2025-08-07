@@ -177,7 +177,7 @@ class Attention(nn.Module):
         # Use -1 instead of `n_heads` (or `n_kv_heads`) to infer the actual
         # local heads from sizes of xq, xk, and xv as TP may have sharded them
         # after the above linear ops.
-        xq = xq.view(bs, seqlen, -1, self.head_dim)
+        xq = self.wq(x)
         xkv = self.wkv(x)
         xk, xv = xkv.split([self.kv_size, self.kv_size], dim=-1)
         xk = xk.contiguous()
