@@ -20,8 +20,8 @@ import torch.distributed as dist
 import torch.distributed.checkpoint as dcp
 import torch.nn as nn
 from torch.distributed.checkpoint import (
-    _HuggingFaceStorageReader,
-    _HuggingFaceStorageWriter,
+    HuggingFaceStorageReader,
+    HuggingFaceStorageWriter,
 )
 from torch.distributed.checkpoint.staging import BlockingAsyncStager
 from torch.distributed.checkpoint.state_dict import (
