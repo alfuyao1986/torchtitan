@@ -20,10 +20,10 @@ import torch.distributed as dist
 import torch.distributed.checkpoint as dcp
 import torch.nn as nn
 from torch.distributed.checkpoint import (
-    HuggingFaceStorageReader,
-    HuggingFaceStorageWriter,
+    _HuggingFaceStorageReader,
+    _HuggingFaceStorageWriter,
 )
-from torch.distributed.checkpoint.staging import DefaultStager, StagingOptions
+from torch.distributed.checkpoint.staging import BlockingAsyncStager
 from torch.distributed.checkpoint.state_dict import (
     get_model_state_dict,
     set_model_state_dict,
@@ -482,7 +482,7 @@ class CheckpointManager:
             if self.async_mode == AsyncMode.ASYNC_WITH_PINNED_MEM:
                 GarbageCollection.collect("GC collection invoked by checkpointer.")
                 if self.stager is None:
-                    self.stager = DefaultStager(StagingOptions(True, True, True, True))
+                    self.stager = BlockingAsyncStager(cache_staged_state_dict=False, type_check=False)
                 result = self.dcp_save(
                     states,
                     checkpoint_id=checkpoint_id,
